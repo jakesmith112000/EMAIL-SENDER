@@ -15,7 +15,6 @@ def get_db_connection():
         database_url = os.environ.get('DATABASE_URL')
         if not database_url:
             raise RuntimeError("DATABASE_URL environment variable not set")
-        # Use a connection pool (min=1, max=10)
         db_pool = pool.SimpleConnectionPool(1, 10, database_url)
     return db_pool.getconn()
 
@@ -23,27 +22,10 @@ def put_db_connection(conn):
     db_pool.putconn(conn)
 
 def get_db():
-    """Return a connection (for compatibility with old code that used get_db() directly).
-       In the old code we used `conn = db.get_db()` and then `conn.execute(...)`.
-       With psycopg2 we need a cursor. To keep the same interface, we return a connection
-       but we will add a wrapper that allows `conn.execute()`? Actually psycopg2 connections
-       don't have execute method. So we must change the way we call it. 
-       To minimise changes in app.py, we will provide a wrapper class that mimics sqlite3's
-       connection with execute method? That would be messy.
-       
-       Better: I will change the functions in db.py to accept no connection and handle 
-       the connection internally. But the existing app.py uses db.get_db() and then
-       conn.execute(...) for raw queries (e.g., in clear_logs, delete_batch, etc.).
-       We need to keep those working.
-       
-       Solution: Create a custom class that has execute() and commit() and close().
-       I'll implement a `PgConnection` wrapper.
-    """
     conn = get_db_connection()
     return PgConnection(conn)
 
 class PgConnection:
-    """Wrapper to mimic sqlite3 connection interface."""
     def __init__(self, pg_conn):
         self.pg_conn = pg_conn
         self.cursor = None
@@ -51,7 +33,6 @@ class PgConnection:
     def execute(self, query, params=None):
         if params is None:
             params = ()
-        # Convert ? placeholders to %s
         query = query.replace('?', '%s')
         self.cursor = self.pg_conn.cursor()
         self.cursor.execute(query, params)
@@ -75,7 +56,7 @@ def init_db():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Users table
+            # Users table with approved column
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
@@ -84,6 +65,7 @@ def init_db():
                     password_hash TEXT NOT NULL,
                     role TEXT NOT NULL CHECK(role IN ('user', 'admin')),
                     postmark_token TEXT UNIQUE,
+                    approved BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP,
                     updated_at TIMESTAMP
                 )
@@ -203,6 +185,8 @@ def init_db():
                     user_id TEXT
                 )
             """)
+            # Add approved column if upgrading from older version
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved BOOLEAN DEFAULT FALSE")
         conn.commit()
     finally:
         put_db_connection(conn)
@@ -214,7 +198,7 @@ def hash_password(password):
 def verify_password(password, password_hash):
     return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
-# ---------- User management ----------
+# ---------- User management (with approval) ----------
 def create_user(username, email, password, role='user', postmark_token=None):
     conn = get_db_connection()
     user_id = str(uuid.uuid4())
@@ -223,9 +207,9 @@ def create_user(username, email, password, role='user', postmark_token=None):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO users (id, username, email, password_hash, role, postmark_token, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (user_id, username, email, hashed, role, postmark_token, now, now))
+                INSERT INTO users (id, username, email, password_hash, role, postmark_token, approved, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (user_id, username, email, hashed, role, postmark_token, False, now, now))
             conn.commit()
             return user_id
     except psycopg2.IntegrityError:
@@ -268,9 +252,38 @@ def get_all_users():
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT id, username, email, role, postmark_token, created_at FROM users ORDER BY created_at DESC")
+            cur.execute("SELECT id, username, email, role, postmark_token, approved, created_at FROM users ORDER BY created_at DESC")
             rows = cur.fetchall()
             return [dict(row) for row in rows]
+    finally:
+        put_db_connection(conn)
+
+def get_pending_users():
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id, username, email, created_at FROM users WHERE approved = FALSE ORDER BY created_at ASC")
+            rows = cur.fetchall()
+            return [dict(row) for row in rows]
+    finally:
+        put_db_connection(conn)
+
+def approve_user(user_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE users SET approved = TRUE, updated_at = %s WHERE id = %s",
+                        (datetime.now(timezone.utc).isoformat(), user_id))
+            conn.commit()
+    finally:
+        put_db_connection(conn)
+
+def reject_user(user_id):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            conn.commit()
     finally:
         put_db_connection(conn)
 
@@ -478,7 +491,6 @@ def log_open(message_id, recipient, opened_at, user_agent=None, platform=None, o
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Check for duplicate open
             cur.execute("SELECT id FROM email_opens WHERE message_id = %s AND recipient = %s", (message_id, recipient))
             if cur.fetchone():
                 return
