@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Dashboard – Postmark Flow</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: rgba(15, 25, 40, 0.8);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+            border: 1px solid #334155;
+        }
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 0.5rem 0;
+        }
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .stat-sent { color: #34d399; }
+        .stat-bounce { color: #f87171; }
+        .stat-spam { color: #fbbf24; }
+        .stat-open { color: #60a5fa; }
+        .stat-click { color: #c084fc; }
+        .section-title {
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+        .bounce-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .bounce-table th, .bounce-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← Back to modes</a>
+        <h1>📊 Email Dashboard</h1>
+        <div class="form-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3>Postmark Statistics (Last 30 Days)</h3>
+                <button id="refreshStatsBtn" class="refresh-btn" style="background: #3b82f6; border: none; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer;">⟳ Refresh</button>
+            </div>
+            <div id="statsGrid" class="stats-grid">
+                <div class="stat-card"><div class="stat-label">Sent</div><div class="stat-value stat-sent" id="statSent">-</div></div>
+                <div class="stat-card"><div class="stat-label">Bounces</div><div class="stat-value stat-bounce" id="statBounces">-</div></div>
+                <div class="stat-card"><div class="stat-label">Spam Complaints</div><div class="stat-value stat-spam" id="statSpam">-</div></div>
+                <div class="stat-card"><div class="stat-label">Opens</div><div class="stat-value stat-open" id="statOpens">-</div></div>
+                <div class="stat-card"><div class="stat-label">Unique Opens</div><div class="stat-value stat-open" id="statUniqueOpens">-</div></div>
+                <div class="stat-card"><div class="stat-label">Clicks</div><div class="stat-value stat-click" id="statClicks">-</div></div>
+                <div class="stat-card"><div class="stat-label">Unique Clicks</div><div class="stat-value stat-click" id="statUniqueClicks">-</div></div>
+                <div class="stat-card"><div class="stat-label">Tracked</div><div class="stat-value" id="statTracked">-</div></div>
+            </div>
+
+            <h3 class="section-title">📋 Local Send Logs Summary</h3>
+            <div id="localSummary">
+                <div style="text-align:center; padding: 1rem;">Loading...</div>
+            </div>
+
+            <h3 class="section-title">💥 Recent Bounces (from Postmark)</h3>
+            <div id="bouncesContainer">
+                <div style="text-align:center; padding: 1rem;">Loading bounces...</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/postmark/stats');
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('statSent').innerText = data.sent.toLocaleString();
+                    document.getElementById('statBounces').innerText = data.bounces.toLocaleString();
+                    document.getElementById('statSpam').innerText = data.spam_complaints.toLocaleString();
+                    document.getElementById('statOpens').innerText = data.opens.toLocaleString();
+                    document.getElementById('statUniqueOpens').innerText = data.unique_opens.toLocaleString();
+                    document.getElementById('statClicks').innerText = data.clicks.toLocaleString();
+                    document.getElementById('statUniqueClicks').innerText = data.unique_clicks.toLocaleString();
+                    document.getElementById('statTracked').innerText = data.tracked.toLocaleString();
+                } else {
+                    document.getElementById('statsGrid').innerHTML = `<div class="alert alert-error">Failed to load stats: ${data.error}</div>`;
+                }
+            } catch (err) {
+                document.getElementById('statsGrid').innerHTML = `<div class="alert alert-error">Network error: ${err.message}</div>`;
+            }
+        }
+
+        async function loadLocalSummary() {
+            try {
+                const res = await fetch('/api/logs?limit=1000');
+                const logs = await res.json();
+                const total = logs.length;
+                const sent = logs.filter(l => l.status === 'sent').length;
+                const failed = logs.filter(l => l.status === 'failed').length;
+                const uniqueRecipients = new Set(logs.map(l => l.recipient)).size;
+                const html = `
+                    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+                        <div class="stat-card"><div class="stat-label">Total Attempts</div><div class="stat-value">${total}</div></div>
+                        <div class="stat-card"><div class="stat-label">Successful</div><div class="stat-value stat-sent">${sent}</div></div>
+                        <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-value stat-bounce">${failed}</div></div>
+                        <div class="stat-card"><div class="stat-label">Unique Recipients</div><div class="stat-value">${uniqueRecipients}</div></div>
+                    </div>
+                `;
+                document.getElementById('localSummary').innerHTML = html;
+            } catch (err) {
+                document.getElementById('localSummary').innerHTML = `<div class="alert alert-error">Error loading local logs: ${err.message}</div>`;
+            }
+        }
+
+        async function loadBounces() {
+            try {
+                const res = await fetch('/api/postmark/bounces');
+                const data = await res.json();
+                if (data.Bounces && data.Bounces.length) {
+                    const table = `
+                        <table class="bounce-table">
+                            <thead><tr><th>Email</th><th>Type</th><th>Details</th><th>Date</th></tr></thead>
+                            <tbody>
+                                ${data.Bounces.slice(0, 20).map(b => `
+                                    <tr>
+                                        <td>${b.Email}</td>
+                                        <td>${b.Type}</td>
+                                        <td>${b.Details}</td>
+                                        <td>${new Date(b.BouncedAt).toLocaleString()}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                        ${data.Bounces.length > 20 ? `<p style="margin-top:0.5rem;">Showing last 20 of ${data.Bounces.length} bounces</p>` : ''}
+                    `;
+                    document.getElementById('bouncesContainer').innerHTML = table;
+                } else {
+                    document.getElementById('bouncesContainer').innerHTML = '<div style="text-align:center; padding:1rem;">No bounces found.</div>';
+                }
+            } catch (err) {
+                document.getElementById('bouncesContainer').innerHTML = `<div class="alert alert-error">Error loading bounces: ${err.message}</div>`;
+            }
+        }
+
+        document.getElementById('refreshStatsBtn').addEventListener('click', () => {
+            loadStats();
+            loadLocalSummary();
+            loadBounces();
+        });
+
+        loadStats();
+        loadLocalSummary();
+        loadBounces();
+        setInterval(loadStats, 60000); // refresh every minute
+    </script>
+</body>
+</html>

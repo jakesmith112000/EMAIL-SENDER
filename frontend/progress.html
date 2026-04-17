@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Progress & Stats – Postmark Flow</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: linear-gradient(135deg, #0a0f1a, #0f172a);
+            font-family: 'Inter', system-ui, sans-serif;
+            color: #f1f5f9;
+            padding: 2rem;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(135deg, #fff, #60a5fa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .sub { color: #94a3b8; margin-bottom: 2rem; }
+        .back-link { color: #60a5fa; text-decoration: none; display: inline-block; margin-bottom: 1rem; }
+        .back-link:hover { text-decoration: underline; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: rgba(15, 25, 40, 0.7);
+            backdrop-filter: blur(8px);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            border: 1px solid rgba(59,130,246,0.3);
+            transition: 0.2s;
+        }
+        .stat-card:hover { border-color: #3b82f6; transform: translateY(-2px); }
+        .stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 0.5rem; }
+        .stat-value { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+        .stat-sent { color: #34d399; }
+        .stat-bounce { color: #f87171; }
+        .stat-spam { color: #fbbf24; }
+        .stat-open { color: #60a5fa; }
+        .stat-click { color: #c084fc; }
+        .batch-card {
+            background: rgba(10, 20, 30, 0.8);
+            backdrop-filter: blur(12px);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #334155;
+        }
+        .batch-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .batch-title { font-weight: 600; font-size: 1.1rem; color: #e2e8f0; }
+        .batch-meta { font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem; }
+        .batch-status {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 2rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .status-processing { background: #f59e0b20; color: #fbbf24; border: 1px solid #f59e0b; }
+        .status-completed { background: #10b98120; color: #34d399; border: 1px solid #10b981; }
+        .progress-bar-container {
+            background: #1e293b;
+            border-radius: 1rem;
+            height: 32px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+        .progress-bar-fill {
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+            height: 100%;
+            width: 0%;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 12px;
+            color: white;
+            font-weight: 600;
+            font-size: 0.8rem;
+            transition: width 0.3s ease;
+        }
+        .batch-stats {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+        .batch-stat-item {
+            background: rgba(0,0,0,0.3);
+            border-radius: 0.75rem;
+            padding: 0.5rem 1rem;
+            text-align: center;
+            flex: 1;
+        }
+        .batch-stat-number { font-size: 1.5rem; font-weight: 700; }
+        .batch-stat-label { font-size: 0.7rem; color: #94a3b8; }
+        .view-btn {
+            background: #3b82f6;
+            border: none;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            color: white;
+            font-size: 0.7rem;
+            cursor: pointer;
+            margin-left: 0.5rem;
+        }
+        .view-btn:hover { background: #2563eb; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #1e293b;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            color: #f1f5f9;
+        }
+        .modal-content h3 { margin-bottom: 1rem; }
+        .modal-content ul { list-style: none; padding: 0; }
+        .modal-content li { padding: 0.5rem; border-bottom: 1px solid #334155; }
+        .close-modal {
+            float: right;
+            background: none;
+            border: none;
+            color: #f1f5f9;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        .refresh-btn, .manage-btn {
+            background: #3b82f6;
+            border: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 2rem;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: 0.5rem;
+        }
+        .manage-btn { background: #8b5cf6; }
+        .manage-btn:hover { background: #7c3aed; }
+        .section-title {
+            font-size: 1.3rem;
+            margin: 1.5rem 0 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .empty-state { text-align: center; padding: 3rem; color: #64748b; }
+        .batch-checkbox { margin-right: 0.5rem; }
+        .selection-actions { margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: flex-end; }
+        .danger-btn { background: #dc2626; }
+        .danger-btn:hover { background: #b91c1c; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="index.html" class="back-link">← Back to modes</a>
+    <h1>📊 Batch Progress & Live Stats</h1>
+    <p class="sub">Real‑time sending progress + Postmark engagement metrics</p>
+
+    <div class="section-title">
+        <span>📈 Email Performance (last 30 days)</span>
+        <button id="refreshStatsBtn" class="refresh-btn">⟳ Refresh Stats</button>
+    </div>
+    <div class="stats-grid" id="overallStats">
+        <div class="stat-card"><div class="stat-label">Sent</div><div class="stat-value stat-sent" id="statSent">-</div></div>
+        <div class="stat-card"><div class="stat-label">Bounces</div><div class="stat-value stat-bounce" id="statBounces">-</div></div>
+        <div class="stat-card"><div class="stat-label">Spam Complaints</div><div class="stat-value stat-spam" id="statSpam">-</div></div>
+        <div class="stat-card"><div class="stat-label">Opens</div><div class="stat-value stat-open" id="statOpens">-</div></div>
+    </div>
+
+    <div class="section-title">
+        <span>⏳ Active & Recent Batches</span>
+        <div>
+            <button id="refreshBatchesBtn" class="refresh-btn">⟳ Refresh</button>
+            <button id="manageBatchesBtn" class="manage-btn">📋 Manage Batches</button>
+        </div>
+    </div>
+    <div id="batchesContainer"><div class="empty-state">Loading batches...</div></div>
+</div>
+
+<!-- Modal for opens/clicks -->
+<div id="modal" class="modal">
+    <div class="modal-content">
+        <button class="close-modal">&times;</button>
+        <h3 id="modalTitle">Opens</h3>
+        <div id="modalList"></div>
+    </div>
+</div>
+
+<!-- Modal for batch management -->
+<div id="manageModal" class="modal">
+    <div class="modal-content">
+        <button class="close-manage-modal" style="float:right; background:none; border:none; color:#f1f5f9; font-size:1.5rem; cursor:pointer;">&times;</button>
+        <h3>Manage Batches</h3>
+        <div id="batchListContainer">
+            <div style="text-align:center; padding:1rem;">Loading batches...</div>
+        </div>
+        <div class="selection-actions">
+            <button id="selectAllBtn" class="refresh-btn" style="background:#475569;">Select All</button>
+            <button id="clearAllBtn" class="refresh-btn" style="background:#475569;">Clear All</button>
+            <button id="deleteSelectedBtn" class="refresh-btn danger-btn">Delete Selected</button>
+            <button id="deleteAllBtn" class="refresh-btn danger-btn">Delete All</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function loadOverallStats() {
+        try {
+            const res = await fetch('/api/postmark/stats');
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('statSent').innerText = data.sent.toLocaleString();
+                document.getElementById('statBounces').innerText = data.bounces.toLocaleString();
+                document.getElementById('statSpam').innerText = data.spam_complaints.toLocaleString();
+                document.getElementById('statOpens').innerText = data.opens.toLocaleString();
+                document.getElementById('statClicks').innerText = data.clicks.toLocaleString();
+            }
+        } catch(err) { console.error(err); }
+    }
+
+    async function loadBatches() {
+        try {
+            const listRes = await fetch('/api/batch/list');
+            const batches = await listRes.json();
+            const container = document.getElementById('batchesContainer');
+            if (!batches.length) {
+                container.innerHTML = '<div class="empty-state">No batches found. Start a batch from the Batch Email page.</div>';
+                return;
+            }
+            let html = '';
+            for (const batch of batches) {
+                const detailRes = await fetch(`/api/batch/progress/${batch.batch_id}`);
+                const detail = await detailRes.json();
+                const total = detail.total;
+                const sent = detail.sent || 0;
+                const failed = detail.failed || 0;
+                const completed = sent + failed;
+                const remaining = total - completed;
+                const percent = total > 0 ? (completed / total * 100).toFixed(1) : 0;
+                const statusClass = detail.status === 'completed' ? 'status-completed' : 'status-processing';
+                const statusText = detail.status === 'completed' ? '✅ Completed' : '⚙️ Processing';
+                html += `
+                    <div class="batch-card">
+                        <div class="batch-header">
+                            <div>
+                                <div class="batch-title">📧 ${escapeHtml(detail.subject)}</div>
+                                <div class="batch-meta">From: ${escapeHtml(detail.from_email)} • Started: ${new Date(detail.created_at).toLocaleString()}</div>
+                            </div>
+                            <div><span class="batch-status ${statusClass}">${statusText}</span></div>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" style="width: ${percent}%">${percent}%</div>
+                        </div>
+                        <div class="batch-stats">
+                            <div class="batch-stat-item"><div class="batch-stat-number" style="color:#34d399">${sent}</div><div class="batch-stat-label">Sent</div></div>
+                            <div class="batch-stat-item"><div class="batch-stat-number" style="color:#f87171">${failed}</div><div class="batch-stat-label">Failed</div></div>
+                            <div class="batch-stat-item"><div class="batch-stat-number" style="color:#fbbf24">${remaining}</div><div class="batch-stat-label">Remaining</div></div>
+                            <div class="batch-stat-item"><div class="batch-stat-number">${total}</div><div class="batch-stat-label">Total</div></div>
+                            <div class="batch-stat-item"><div class="batch-stat-number" style="color:#60a5fa">${detail.opens || 0}</div><div class="batch-stat-label">Opens <button class="view-btn" data-batch="${batch.batch_id}" data-type="opens">View</button></div></div>
+                            <div class="batch-stat-item"><div class="batch-stat-number" style="color:#c084fc">${detail.clicks || 0}</div><div class="batch-stat-label">Clicks <button class="view-btn" data-batch="${batch.batch_id}" data-type="clicks">View</button></div></div>
+                        </div>
+                        ${detail.duplicates_removed ? `<div style="margin-top:0.75rem; font-size:0.75rem; color:#fbbf24;">⚠️ Removed ${detail.duplicates_removed} duplicate(s)</div>` : ''}
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const batchId = btn.dataset.batch;
+                    const type = btn.dataset.type;
+                    showModal(batchId, type);
+                });
+            });
+        } catch(err) {
+            console.error(err);
+            document.getElementById('batchesContainer').innerHTML = '<div class="empty-state">Error loading batches.</div>';
+        }
+    }
+
+    async function showModal(batchId, type) {
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalList = document.getElementById('modalList');
+        try {
+            const res = await fetch(`/api/batch/${batchId}/${type}`);
+            const data = await res.json();
+            modalTitle.innerText = type === 'opens' ? `Opens (${data.length})` : `Clicks (${data.length})`;
+            if (data.length === 0) {
+                modalList.innerHTML = '<p>No events yet.</p>';
+            } else {
+                const list = document.createElement('ul');
+                data.forEach(item => {
+                    const li = document.createElement('li');
+                    if (type === 'opens') {
+                        li.innerHTML = `<strong>${escapeHtml(item.recipient)}</strong> — ${new Date(item.opened_at).toLocaleString()}<br><small>${escapeHtml(item.user_agent || '')}</small>`;
+                    } else {
+                        li.innerHTML = `<strong>${escapeHtml(item.recipient)}</strong> clicked <a href="${escapeHtml(item.link)}" target="_blank">link</a> at ${new Date(item.clicked_at).toLocaleString()}<br><small>${escapeHtml(item.user_agent || '')}</small>`;
+                    }
+                    list.appendChild(li);
+                });
+                modalList.innerHTML = '';
+                modalList.appendChild(list);
+            }
+            modal.style.display = 'flex';
+        } catch(err) {
+            modalList.innerHTML = '<p class="error">Failed to load data.</p>';
+        }
+    }
+
+    // Batch management functions
+    async function loadManageModal() {
+        const container = document.getElementById('batchListContainer');
+        container.innerHTML = '<div style="text-align:center; padding:1rem;">Loading batches...</div>';
+        try {
+            const res = await fetch('/api/batch/list');
+            const batches = await res.json();
+            if (!batches.length) {
+                container.innerHTML = '<p>No batches to manage.</p>';
+                return;
+            }
+            let html = '<div style="max-height:400px; overflow-y:auto;">';
+            batches.forEach(batch => {
+                html += `
+                    <div style="margin-bottom:0.5rem;">
+                        <label style="display:flex; align-items:center;">
+                            <input type="checkbox" class="batch-checkbox" data-batch-id="${batch.batch_id}" style="margin-right:0.5rem;">
+                            <span><strong>${escapeHtml(batch.subject)}</strong> (${batch.status}) - ${new Date(batch.created_at).toLocaleString()}</span>
+                        </label>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        } catch(err) {
+            container.innerHTML = '<p class="error">Failed to load batches.</p>';
+        }
+    }
+
+    async function deleteSelectedBatches() {
+        const checkboxes = document.querySelectorAll('#batchListContainer .batch-checkbox:checked');
+        const batchIds = Array.from(checkboxes).map(cb => cb.dataset.batchId);
+        if (batchIds.length === 0) {
+            alert('No batches selected.');
+            return;
+        }
+        if (!confirm(`Delete ${batchIds.length} batch(es)? This action cannot be undone.`)) return;
+        try {
+            const res = await fetch('/api/batch/delete_bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ batch_ids: batchIds })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(`${data.deleted} batch(es) deleted.`);
+                document.getElementById('manageModal').style.display = 'none';
+                loadBatches();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch(err) {
+            alert('Network error: ' + err.message);
+        }
+    }
+
+    async function deleteAllBatches() {
+        if (!confirm('⚠️ Delete ALL batches? This action cannot be undone.')) return;
+        try {
+            const res = await fetch('/api/batch/delete_all', { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                alert('All batches deleted.');
+                document.getElementById('manageModal').style.display = 'none';
+                loadBatches();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch(err) {
+            alert('Network error: ' + err.message);
+        }
+    }
+
+    function selectAllBatches() {
+        document.querySelectorAll('#batchListContainer .batch-checkbox').forEach(cb => cb.checked = true);
+    }
+
+    function clearAllBatches() {
+        document.querySelectorAll('#batchListContainer .batch-checkbox').forEach(cb => cb.checked = false);
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // Event listeners
+    document.querySelector('.close-modal').addEventListener('click', () => {
+        document.getElementById('modal').style.display = 'none';
+    });
+    window.addEventListener('click', (e) => {
+        if (e.target === document.getElementById('modal')) {
+            document.getElementById('modal').style.display = 'none';
+        }
+        if (e.target === document.getElementById('manageModal')) {
+            document.getElementById('manageModal').style.display = 'none';
+        }
+    });
+
+    document.getElementById('refreshStatsBtn').addEventListener('click', loadOverallStats);
+    document.getElementById('refreshBatchesBtn').addEventListener('click', loadBatches);
+    document.getElementById('manageBatchesBtn').addEventListener('click', async () => {
+        await loadManageModal();
+        document.getElementById('manageModal').style.display = 'flex';
+    });
+    document.querySelector('.close-manage-modal').addEventListener('click', () => {
+        document.getElementById('manageModal').style.display = 'none';
+    });
+    // Delegate buttons (they exist inside modal, but modal content is dynamic – attach after modal opens)
+    // We'll use event listeners on the buttons after they are created. Better to use event delegation:
+    document.getElementById('manageModal').addEventListener('click', (e) => {
+        if (e.target.id === 'selectAllBtn') selectAllBatches();
+        if (e.target.id === 'clearAllBtn') clearAllBatches();
+        if (e.target.id === 'deleteSelectedBtn') deleteSelectedBatches();
+        if (e.target.id === 'deleteAllBtn') deleteAllBatches();
+    });
+
+    loadOverallStats();
+    loadBatches();
+    setInterval(loadOverallStats, 10000);
+    setInterval(loadBatches, 5000);
+</script>
+</body>
+</html>

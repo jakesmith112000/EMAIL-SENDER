@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Postmark Flow</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* Admin-specific overrides (dark theme compatible) */
+        .admin-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        .nav-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #334155;
+        }
+        .nav-bar h1 {
+            font-size: 1.8rem;
+            margin: 0;
+            background: linear-gradient(135deg, #fff, #a0c4ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .user-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(15, 25, 40, 0.7);
+            backdrop-filter: blur(8px);
+            border-radius: 1rem;
+            overflow: hidden;
+            margin-top: 1rem;
+        }
+        .user-table th,
+        .user-table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+            color: #e2e8f0;
+        }
+        .user-table th {
+            background: rgba(0, 0, 0, 0.4);
+            font-weight: 600;
+            color: #cbd5e6;
+        }
+        .user-table tr:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+        .btn {
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 500;
+            transition: 0.2s;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+        .btn-warning:hover {
+            background: #d97706;
+        }
+        .btn-sm {
+            padding: 0.25rem 0.6rem;
+            font-size: 0.7rem;
+        }
+        .logout-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-weight: 500;
+            margin-left: 0.5rem;
+        }
+        .logout-btn:hover {
+            background: #dc2626;
+        }
+        /* Modal – dark theme */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: rgba(15, 25, 40, 0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid #334155;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            width: 450px;
+            max-width: 90%;
+            box-shadow: 0 20px 35px -10px rgba(0,0,0,0.5);
+        }
+        .modal-content h3 {
+            margin-bottom: 1rem;
+            color: #f1f5f9;
+        }
+        .modal-content .form-group {
+            margin-bottom: 1rem;
+        }
+        .modal-content .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 0.3rem;
+            color: #cbd5e6;
+        }
+        .modal-content .form-group input,
+        .modal-content .form-group select {
+            width: 100%;
+            padding: 0.6rem 0.8rem;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            color: #f1f5f9;
+            font-size: 0.9rem;
+        }
+        .modal-content .form-group input:focus,
+        .modal-content .form-group select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .modal-content button {
+            margin-top: 0.5rem;
+            margin-right: 0.5rem;
+        }
+        /* Token badge */
+        .token-badge {
+            font-family: monospace;
+            font-size: 0.75rem;
+            background: rgba(0,0,0,0.3);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.3rem;
+        }
+        .no-token {
+            color: #f87171;
+        }
+        .has-token {
+            color: #34d399;
+        }
+    </style>
+</head>
+<body>
+    <div class="container admin-container">
+        <div class="nav-bar">
+            <h1>👑 Admin Panel – User Management</h1>
+            <div>
+                <button id="addUserBtn" class="btn btn-primary">+ Add User</button>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table class="user-table" id="userTable">
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Postmark Token</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Add/Edit User Modal -->
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle">Add User</h3>
+            <form id="userForm">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="password" placeholder="Leave blank to keep unchanged (for edit)">
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select id="role">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Postmark Token (optional)</label>
+                    <input type="text" id="postmarkToken" placeholder="Paste Postmark Server token">
+                </div>
+                <div style="margin-top: 1rem;">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="button" id="closeModal" class="btn" style="background:#475569; color:white;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentUserId = null;
+        
+        async function checkAuth() {
+            const res = await fetch('/api/auth/me');
+            if (!res.ok) {
+                window.location.href = '/login.html';
+                return null;
+            }
+            const user = await res.json();
+            if (user.role !== 'admin') {
+                alert('Admin access required');
+                window.location.href = '/';
+            }
+            return user;
+        }
+        
+        async function loadUsers() {
+            const res = await fetch('/api/admin/users');
+            if (!res.ok) {
+                alert('Failed to load users');
+                return;
+            }
+            const users = await res.json();
+            const tbody = document.getElementById('userTableBody');
+            tbody.innerHTML = '';
+            for (const u of users) {
+                const row = tbody.insertRow();
+                row.insertCell(0).textContent = u.username;
+                row.insertCell(1).textContent = u.email;
+                row.insertCell(2).textContent = u.role;
+                const tokenCell = row.insertCell(3);
+                const tokenDisplay = u.postmark_token_masked || (u.postmark_token ? '****' : '❌ Not set');
+                const tokenClass = u.postmark_token ? 'has-token' : 'no-token';
+                tokenCell.innerHTML = `<span class="token-badge ${tokenClass}">${tokenDisplay}</span>`;
+                row.insertCell(4).textContent = new Date(u.created_at).toLocaleString();
+                const actions = row.insertCell(5);
+                actions.innerHTML = `
+                    <button class="btn btn-sm btn-warning" onclick="editUser('${u.id}', '${u.username}', '${u.email}', '${u.role}', '${(u.postmark_token || '').replace(/'/g, "\\'")}')">Edit</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')">Delete</button>
+                    <button class="btn btn-sm" onclick="resetPassword('${u.id}')">Reset Pwd</button>
+                    <button class="btn btn-sm" onclick="setToken('${u.id}')">Set Token</button>
+                `;
+            }
+        }
+        
+        function editUser(id, username, email, role, token) {
+            currentUserId = id;
+            document.getElementById('modalTitle').innerText = 'Edit User';
+            document.getElementById('username').value = username;
+            document.getElementById('email').value = email;
+            document.getElementById('password').value = '';
+            document.getElementById('role').value = role;
+            document.getElementById('postmarkToken').value = token;
+            document.getElementById('userModal').style.display = 'flex';
+        }
+        
+        async function deleteUser(id) {
+            if (!confirm('Delete this user?')) return;
+            const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                loadUsers();
+            } else {
+                alert('Delete failed');
+            }
+        }
+        
+        async function resetPassword(id) {
+            const newPwd = prompt('Enter new password (min 6 characters)');
+            if (!newPwd || newPwd.length < 6) return alert('Password must be at least 6 characters');
+            const res = await fetch(`/api/admin/users/${id}/password`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_password: newPwd })
+            });
+            if (res.ok) {
+                alert('Password updated');
+            } else {
+                alert('Failed to update password');
+            }
+        }
+        
+        async function setToken(id) {
+            const token = prompt('Enter Postmark Server Token (leave empty to remove)');
+            if (token === null) return;
+            const res = await fetch(`/api/admin/users/${id}/token`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ postmark_token: token.trim() || null })
+            });
+            if (res.ok) {
+                alert('Token updated');
+                loadUsers();
+            } else {
+                alert('Failed to update token');
+            }
+        }
+        
+        document.getElementById('addUserBtn').addEventListener('click', () => {
+            currentUserId = null;
+            document.getElementById('modalTitle').innerText = 'Add User';
+            document.getElementById('username').value = '';
+            document.getElementById('email').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('role').value = 'user';
+            document.getElementById('postmarkToken').value = '';
+            document.getElementById('userModal').style.display = 'flex';
+        });
+        
+        document.getElementById('closeModal').addEventListener('click', () => {
+            document.getElementById('userModal').style.display = 'none';
+        });
+        
+        // Click outside modal to close
+        window.addEventListener('click', (e) => {
+            const modal = document.getElementById('userModal');
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+        
+        document.getElementById('userForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                username: document.getElementById('username').value,
+                email: document.getElementById('email').value,
+                role: document.getElementById('role').value,
+                postmark_token: document.getElementById('postmarkToken').value || null
+            };
+            const password = document.getElementById('password').value;
+            if (currentUserId === null) {
+                // Create new user
+                if (!password) {
+                    alert('Password required for new user');
+                    return;
+                }
+                payload.password = password;
+                const res = await fetch('/api/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    alert('User created');
+                    document.getElementById('userModal').style.display = 'none';
+                    loadUsers();
+                } else {
+                    const err = await res.json();
+                    alert(err.error || 'Creation failed');
+                }
+            } else {
+                // Edit: update role and token, password optional
+                await fetch(`/api/admin/users/${currentUserId}/role`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: payload.role })
+                });
+                await fetch(`/api/admin/users/${currentUserId}/token`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ postmark_token: payload.postmark_token })
+                });
+                if (password && password.length >= 6) {
+                    await fetch(`/api/admin/users/${currentUserId}/password`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ new_password: password })
+                    });
+                }
+                alert('User updated');
+                document.getElementById('userModal').style.display = 'none';
+                loadUsers();
+            }
+        });
+        
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login.html';
+        });
+        
+        checkAuth().then(() => loadUsers());
+    </script>
+</body>
+</html>

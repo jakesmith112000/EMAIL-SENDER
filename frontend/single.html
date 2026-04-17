@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Single Email – Postmark Flow</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← Back to modes</a>
+        <h1>✉️ Single Email</h1>
+        <div class="form-card">
+            <div class="form-row">
+                <div class="form-group"><label>From Name (optional)</label><input type="text" id="fromName" placeholder="Your Name"></div>
+                <div class="form-group"><label>From Email *</label><input type="email" id="fromEmail" placeholder="hello@yourdomain.com"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>To *</label><input type="email" id="to" placeholder="recipient@example.com"></div>
+                <div class="form-group"><label>Subject *</label><input type="text" id="subject"></div>
+            </div>
+            <!-- Attachment row -->
+            <div class="form-group">
+                <label>Attachment (optional)</label>
+                <div class="attachment-row">
+                    <label>
+                        <input type="checkbox" id="attachCheckbox"> Enable attachment
+                    </label>
+                    <input type="file" id="attachmentFile" disabled>
+                    <div id="attachmentInfo" class="file-badge" style="display:none"></div>
+                </div>
+            </div>
+
+            <!-- Tabs: Write, Upload, Preview, Spam -->
+            <div class="tabs" id="tabs">
+                <button class="tab-btn active" data-tab="write">✏️ Write</button>
+                <button class="tab-btn" data-tab="upload">📂 Upload HTML</button>
+                <button class="tab-btn" data-tab="preview">👁️ Preview</button>
+                <button class="tab-btn" data-tab="spam">🔍 Spam Check</button>
+            </div>
+
+            <!-- Write Tab -->
+            <div id="writeTab" class="tab-pane active">
+                <textarea id="htmlBody" rows="10" placeholder="Write your HTML email here..."></textarea>
+            </div>
+
+            <!-- Upload Tab (Drag & Drop) -->
+            <div id="uploadTab" class="tab-pane">
+                <div class="drag-zone" id="htmlDragZone" 
+                     onclick="document.getElementById('htmlFileInput').click()" 
+                     ondragover="dragOver(event)" 
+                     ondragleave="dragLeave(event)" 
+                     ondrop="dropHtmlFile(event)">
+                    <div class="drag-icon">📄</div>
+                    <div class="drag-text">Drag & drop an HTML file here<br>or click to select</div>
+                </div>
+                <input type="file" id="htmlFileInput" accept=".html,.htm" style="display:none">
+                <div id="htmlUploadBadge" class="file-badge" style="display:none; margin-top:0.5rem;"></div>
+            </div>
+
+            <!-- Preview Tab -->
+            <div id="previewTab" class="tab-pane">
+                <div id="previewContent" class="preview-box"></div>
+            </div>
+
+            <!-- Spam Tab -->
+            <div id="spamTab" class="tab-pane">
+                <div id="spamResult" class="preview-box"></div>
+                <button class="btn btn-secondary" style="width:100%; margin-top:1rem" onclick="checkSpamSingle()">🔍 Check Spam Score</button>
+            </div>
+
+            <button class="btn btn-primary" onclick="sendSingle()">Send Email</button>
+            <div id="result"></div>
+        </div>
+    </div>
+    <script src="js/main.js"></script>
+    <script>
+        // Attachment handling (unchanged)
+        let attachmentBase64 = null, attachmentName = null, attachmentType = null;
+        const attachCheckbox = document.getElementById('attachCheckbox');
+        const attachmentFile = document.getElementById('attachmentFile');
+        attachCheckbox.addEventListener('change', () => {
+            attachmentFile.disabled = !attachCheckbox.checked;
+            if (!attachCheckbox.checked) {
+                attachmentBase64 = null;
+                document.getElementById('attachmentInfo').style.display = 'none';
+                attachmentFile.value = '';
+            }
+        });
+        attachmentFile.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file && attachCheckbox.checked) {
+                attachmentBase64 = await fileToBase64(file);
+                attachmentName = file.name;
+                attachmentType = file.type;
+                document.getElementById('attachmentInfo').textContent = `📎 ${file.name} ready`;
+                document.getElementById('attachmentInfo').style.display = 'inline-block';
+            } else {
+                attachmentBase64 = null;
+                document.getElementById('attachmentInfo').style.display = 'none';
+            }
+        });
+
+        // HTML file upload (drag & drop) logic
+        function dropHtmlFile(e) {
+            e.preventDefault();
+            const zone = e.currentTarget;
+            zone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file && (file.name.endsWith('.html') || file.name.endsWith('.htm'))) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const htmlContent = ev.target.result;
+                    document.getElementById('htmlBody').value = htmlContent;
+                    document.getElementById('previewContent').innerHTML = htmlContent;
+                    document.getElementById('htmlUploadBadge').textContent = `✅ ${file.name} loaded`;
+                    document.getElementById('htmlUploadBadge').style.display = 'inline-block';
+                    zone.classList.add('success');
+                    setTimeout(() => zone.classList.remove('success'), 1500);
+                    // Optional: switch to Preview tab automatically
+                    document.querySelector('.tab-btn[data-tab="preview"]').click();
+                };
+                reader.readAsText(file);
+            } else {
+                alert('Please drop an HTML file (.html or .htm)');
+            }
+        }
+
+        // Click to select file
+        document.getElementById('htmlFileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const htmlContent = ev.target.result;
+                    document.getElementById('htmlBody').value = htmlContent;
+                    document.getElementById('previewContent').innerHTML = htmlContent;
+                    document.getElementById('htmlUploadBadge').textContent = `✅ ${file.name} loaded`;
+                    document.getElementById('htmlUploadBadge').style.display = 'inline-block';
+                    // Auto switch to Preview
+                    document.querySelector('.tab-btn[data-tab="preview"]').click();
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        // Tabs logic (updated to include uploadTab)
+        const tabs = document.querySelectorAll('.tab-btn');
+        const panes = {
+            write: document.getElementById('writeTab'),
+            upload: document.getElementById('uploadTab'),
+            preview: document.getElementById('previewTab'),
+            spam: document.getElementById('spamTab')
+        };
+        tabs.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                tabs.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                Object.values(panes).forEach(p => p.classList.remove('active'));
+                panes[tab].classList.add('active');
+                if (tab === 'preview') {
+                    document.getElementById('previewContent').innerHTML = document.getElementById('htmlBody').value;
+                }
+            });
+        });
+
+        // Update preview when Write tab content changes
+        document.getElementById('htmlBody').addEventListener('input', () => {
+            if (panes.preview.classList.contains('active')) {
+                document.getElementById('previewContent').innerHTML = document.getElementById('htmlBody').value;
+            }
+        });
+
+        // Spam check wrapper
+        async function checkSpamSingle() { await checkSpam('htmlBody', 'spamResult'); }
+
+        // Send single email (unchanged logic)
+        async function sendSingle() {
+            const fromName = document.getElementById('fromName').value;
+            const fromEmail = document.getElementById('fromEmail').value;
+            const to = document.getElementById('to').value;
+            const subject = document.getElementById('subject').value;
+            const html = document.getElementById('htmlBody').value;
+            if (!fromEmail || !to || !subject) { alert('Fill From Email, To, and Subject'); return; }
+            const payload = { FromName: fromName, FromEmail: fromEmail, To: to, Subject: subject, HtmlBody: html };
+            if (attachCheckbox.checked && attachmentBase64) {
+                payload.Attachments = [{ Name: attachmentName, Content: attachmentBase64, ContentType: attachmentType }];
+            }
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Sending...';
+            try {
+                const res = await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (data.success) resultDiv.innerHTML = `<div class="alert alert-success">✅ Sent! Message ID: ${data.message_id}</div>`;
+                else resultDiv.innerHTML = `<div class="alert alert-error">❌ Error: ${data.error}</div>`;
+            } catch(e) { resultDiv.innerHTML = `<div class="alert alert-error">❌ Network error: ${e.message}</div>`; }
+        }
+    </script>
+</body>
+</html>
