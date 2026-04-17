@@ -113,7 +113,7 @@ def register():
     if not user_id:
         return jsonify({'error': 'Username or email already exists'}), 409
     
-    return jsonify({'success': True, 'message': 'Registration successful. Please log in.'}), 201
+    return jsonify({'success': True, 'message': 'Registration successful. Please wait for admin approval.'}), 201
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
@@ -129,6 +129,10 @@ def login():
     
     if not db.verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid credentials'}), 401
+    
+    # Check if account is approved
+    if not user.get('approved', False):
+        return jsonify({'error': 'Account not approved. Please wait for admin approval.'}), 403
     
     session['user_id'] = user['id']
     session['role'] = user['role']
@@ -183,7 +187,7 @@ def change_password():
     return jsonify({'success': True}), 200
 
 # ----------------------------------------------------------------------
-# Admin user management
+# Admin user management (with approval system)
 # ----------------------------------------------------------------------
 @app.route('/api/admin/users', methods=['GET'])
 @admin_required
@@ -249,6 +253,27 @@ def admin_update_token(user_id):
     data = request.json
     token = data.get('postmark_token', '').strip() or None
     db.update_user_postmark_token(user_id, token)
+    return jsonify({'success': True}), 200
+
+# ----- Admin approval endpoints -----
+@app.route('/api/admin/users/pending', methods=['GET'])
+@admin_required
+def admin_pending_users():
+    users = db.get_pending_users()
+    return jsonify(users), 200
+
+@app.route('/api/admin/users/<user_id>/approve', methods=['POST'])
+@admin_required
+def admin_approve_user(user_id):
+    db.approve_user(user_id)
+    return jsonify({'success': True}), 200
+
+@app.route('/api/admin/users/<user_id>/reject', methods=['DELETE'])
+@admin_required
+def admin_reject_user(user_id):
+    if user_id == session['user_id']:
+        return jsonify({'error': 'Cannot reject your own account'}), 400
+    db.reject_user(user_id)
     return jsonify({'success': True}), 200
 
 # ----------------------------------------------------------------------
@@ -336,7 +361,6 @@ def send_batch():
     duplicates_removed = original_count - len(recipients)
 
     batch_id = str(uuid.uuid4())
-    # ✅ Store user_id with batch
     db.create_batch_job(batch_id, 'processing', len(recipients), duplicates_removed, subject, from_email, session['user_id'])
 
     import threading
