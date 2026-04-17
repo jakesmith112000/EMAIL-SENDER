@@ -7,7 +7,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <style>
-        /* Admin-specific overrides (dark theme compatible) */
         .admin-container {
             max-width: 1400px;
             margin: 0 auto;
@@ -28,6 +27,50 @@
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
+        }
+        .pending-section {
+            background: rgba(15, 25, 40, 0.5);
+            border-radius: 1rem;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            border: 1px solid #334155;
+        }
+        .pending-section h3 {
+            color: #fbbf24;
+            margin-top: 0;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .pending-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .pending-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .pending-info {
+            flex: 1;
+        }
+        .pending-info strong {
+            color: #e2e8f0;
+        }
+        .pending-info small {
+            color: #94a3b8;
+            font-size: 0.75rem;
+        }
+        .pending-actions {
+            display: flex;
+            gap: 0.5rem;
         }
         .user-table {
             width: 100%;
@@ -69,6 +112,13 @@
         .btn-primary:hover {
             background: #2563eb;
         }
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #059669;
+        }
         .btn-danger {
             background: #dc2626;
             color: white;
@@ -100,7 +150,22 @@
         .logout-btn:hover {
             background: #dc2626;
         }
-        /* Modal – dark theme */
+        .badge-approved {
+            background: #10b98120;
+            color: #34d399;
+            padding: 0.2rem 0.5rem;
+            border-radius: 1rem;
+            font-size: 0.7rem;
+            display: inline-block;
+        }
+        .badge-pending {
+            background: #f59e0b20;
+            color: #fbbf24;
+            padding: 0.2rem 0.5rem;
+            border-radius: 1rem;
+            font-size: 0.7rem;
+            display: inline-block;
+        }
         .modal {
             display: none;
             position: fixed;
@@ -157,7 +222,6 @@
             margin-top: 0.5rem;
             margin-right: 0.5rem;
         }
-        /* Token badge */
         .token-badge {
             font-family: monospace;
             font-size: 0.75rem;
@@ -183,6 +247,15 @@
             </div>
         </div>
 
+        <!-- Pending Approvals Section -->
+        <div class="pending-section">
+            <h3>⏳ Pending Approvals</h3>
+            <div id="pendingList" class="pending-list">
+                <div style="text-align: center; color: #94a3b8;">Loading pending users...</div>
+            </div>
+        </div>
+
+        <!-- All Users Table -->
         <div style="overflow-x: auto;">
             <table class="user-table" id="userTable">
                 <thead>
@@ -190,6 +263,7 @@
                         <th>Username</th>
                         <th>Email</th>
                         <th>Role</th>
+                        <th>Approved</th>
                         <th>Postmark Token</th>
                         <th>Created</th>
                         <th>Actions</th>
@@ -253,6 +327,65 @@
             return user;
         }
         
+        // Load pending users (approved = false)
+        async function loadPendingUsers() {
+            try {
+                const res = await fetch('/api/admin/users/pending');
+                if (!res.ok) throw new Error('Failed to fetch pending users');
+                const users = await res.json();
+                const container = document.getElementById('pendingList');
+                if (users.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; color: #94a3b8;">✅ No pending approvals.</div>';
+                    return;
+                }
+                let html = '';
+                for (const u of users) {
+                    html += `
+                        <div class="pending-item">
+                            <div class="pending-info">
+                                <strong>${escapeHtml(u.username)}</strong> (${escapeHtml(u.email)})<br>
+                                <small>Registered: ${new Date(u.created_at).toLocaleString()}</small>
+                            </div>
+                            <div class="pending-actions">
+                                <button class="btn btn-success btn-sm" onclick="approveUser('${u.id}')">Approve</button>
+                                <button class="btn btn-danger btn-sm" onclick="rejectUser('${u.id}')">Reject</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                container.innerHTML = html;
+            } catch (err) {
+                document.getElementById('pendingList').innerHTML = '<div style="text-align: center; color: #f87171;">Error loading pending users</div>';
+            }
+        }
+        
+        // Approve user (set approved = true)
+        async function approveUser(userId) {
+            if (!confirm('Approve this user? They will be able to log in.')) return;
+            const res = await fetch(`/api/admin/users/${userId}/approve`, { method: 'POST' });
+            if (res.ok) {
+                alert('User approved');
+                loadPendingUsers();
+                loadUsers();
+            } else {
+                alert('Approval failed');
+            }
+        }
+        
+        // Reject user (delete)
+        async function rejectUser(userId) {
+            if (!confirm('Reject this registration? The user will be deleted.')) return;
+            const res = await fetch(`/api/admin/users/${userId}/reject`, { method: 'DELETE' });
+            if (res.ok) {
+                alert('User rejected and removed');
+                loadPendingUsers();
+                loadUsers();
+            } else {
+                alert('Rejection failed');
+            }
+        }
+        
+        // Load all users for the main table
         async function loadUsers() {
             const res = await fetch('/api/admin/users');
             if (!res.ok) {
@@ -267,12 +400,20 @@
                 row.insertCell(0).textContent = u.username;
                 row.insertCell(1).textContent = u.email;
                 row.insertCell(2).textContent = u.role;
-                const tokenCell = row.insertCell(3);
+                // Approved status
+                const approvedCell = row.insertCell(3);
+                if (u.approved) {
+                    approvedCell.innerHTML = '<span class="badge-approved">✅ Approved</span>';
+                } else {
+                    approvedCell.innerHTML = '<span class="badge-pending">⏳ Pending</span>';
+                }
+                // Postmark token
+                const tokenCell = row.insertCell(4);
                 const tokenDisplay = u.postmark_token_masked || (u.postmark_token ? '****' : '❌ Not set');
                 const tokenClass = u.postmark_token ? 'has-token' : 'no-token';
                 tokenCell.innerHTML = `<span class="token-badge ${tokenClass}">${tokenDisplay}</span>`;
-                row.insertCell(4).textContent = new Date(u.created_at).toLocaleString();
-                const actions = row.insertCell(5);
+                row.insertCell(5).textContent = new Date(u.created_at).toLocaleString();
+                const actions = row.insertCell(6);
                 actions.innerHTML = `
                     <button class="btn btn-sm btn-warning" onclick="editUser('${u.id}', '${u.username}', '${u.email}', '${u.role}', '${(u.postmark_token || '').replace(/'/g, "\\'")}')">Edit</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')">Delete</button>
@@ -298,6 +439,7 @@
             const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 loadUsers();
+                loadPendingUsers(); // in case deleted user was pending
             } else {
                 alert('Delete failed');
             }
@@ -349,7 +491,6 @@
             document.getElementById('userModal').style.display = 'none';
         });
         
-        // Click outside modal to close
         window.addEventListener('click', (e) => {
             const modal = document.getElementById('userModal');
             if (e.target === modal) {
@@ -367,7 +508,6 @@
             };
             const password = document.getElementById('password').value;
             if (currentUserId === null) {
-                // Create new user
                 if (!password) {
                     alert('Password required for new user');
                     return;
@@ -382,12 +522,12 @@
                     alert('User created');
                     document.getElementById('userModal').style.display = 'none';
                     loadUsers();
+                    loadPendingUsers();
                 } else {
                     const err = await res.json();
                     alert(err.error || 'Creation failed');
                 }
             } else {
-                // Edit: update role and token, password optional
                 await fetch(`/api/admin/users/${currentUserId}/role`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -408,6 +548,7 @@
                 alert('User updated');
                 document.getElementById('userModal').style.display = 'none';
                 loadUsers();
+                loadPendingUsers();
             }
         });
         
@@ -416,7 +557,20 @@
             window.location.href = '/login.html';
         });
         
-        checkAuth().then(() => loadUsers());
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+        
+        checkAuth().then(() => {
+            loadPendingUsers();
+            loadUsers();
+        });
     </script>
 </body>
 </html>
