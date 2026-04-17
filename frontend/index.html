@@ -6,12 +6,36 @@
     <title>Postmark Flow – Choose Mode</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        .header {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 2rem;
+        }
+        .logout-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        .logout-btn:hover {
+            background: #dc2626;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
+        <div class="header">
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </div>
         <h1>✨ Postmark Flow</h1>
         <p class="sub">Choose your sending mode</p>
-        <div class="cards">
+        <div class="cards" id="cardsContainer">
+            <!-- Standard cards (always visible) -->
             <a href="single.html" class="card">
                 <div class="card-icon">✉️</div>
                 <h3>Single Email</h3>
@@ -37,7 +61,46 @@
                 <h3>Batch Progress</h3>
                 <p>Monitor real‑time sending progress & stats</p>
             </a>
+            <!-- Admin card will be inserted here if user is admin -->
         </div>
     </div>
+
+    <script>
+        async function checkAuthAndShowAdmin() {
+            try {
+                const res = await fetch('/api/auth/me');
+                if (!res.ok) {
+                    // Not logged in – redirect to login
+                    window.location.href = '/login.html';
+                    return;
+                }
+                const user = await res.json();
+                // If admin, add the User Management card
+                if (user.role === 'admin') {
+                    const container = document.getElementById('cardsContainer');
+                    const adminCard = document.createElement('a');
+                    adminCard.href = 'admin.html';
+                    adminCard.className = 'card';
+                    adminCard.innerHTML = `
+                        <div class="card-icon">👑</div>
+                        <h3>User Management</h3>
+                        <p>Manage users, approvals, and Postmark tokens</p>
+                    `;
+                    container.appendChild(adminCard);
+                }
+            } catch (err) {
+                console.error('Auth check failed:', err);
+                window.location.href = '/login.html';
+            }
+        }
+
+        // Logout handler
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login.html';
+        });
+
+        checkAuthAndShowAdmin();
+    </script>
 </body>
 </html>
