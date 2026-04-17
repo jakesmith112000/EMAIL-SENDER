@@ -6,7 +6,7 @@ import csv
 import uuid
 import requests
 from io import StringIO
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, make_response, session, redirect, url_for
 from flask_cors import CORS
@@ -19,9 +19,6 @@ app = Flask(__name__, static_folder='frontend', static_url_path='')
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 CORS(app, supports_credentials=True)
 
-# Session verification timeout (30 minutes)
-VERIFY_TIMEOUT_SECONDS = 1800
-
 # Global Postmark token (only used for admin stats endpoint)
 GLOBAL_POSTMARK_TOKEN = os.environ.get('POSTMARK_SERVER_TOKEN')
 if not GLOBAL_POSTMARK_TOKEN:
@@ -30,71 +27,24 @@ if not GLOBAL_POSTMARK_TOKEN:
 POSTMARK_API_URL = 'https://api.postmarkapp.com'
 
 # ----------------------------------------------------------------------
-# Helper: verify user session (cached for 30 min)
-# ----------------------------------------------------------------------
-def verify_user_session():
-    """Returns (user, error_response) or (None, error_response)."""
-    if 'user_id' not in session:
-        return None, jsonify({'error': 'Authentication required'}), 401
-
-    now = time.time()
-    last_verified = session.get('last_verified', 0)
-    # If verified within timeout, trust session
-    if now - last_verified < VERIFY_TIMEOUT_SECONDS:
-        # No need to hit database; but we still need the user object for role checks.
-        # For efficiency, we can store basic user info in session (id, role, approved) but to avoid inconsistency,
-        # we still do a quick DB fetch if we need role. However, since admin_required needs role,
-        # we may as well fetch every time but only after timeout.
-        # Simpler: re-fetch only after timeout. For within timeout, we rely on session['role'] and session['approved'].
-        # But we must ensure those are set. We'll set them at login.
-        if 'role' in session and 'approved' in session:
-            # Create a dummy user dict from session data
-            user = {
-                'id': session['user_id'],
-                'role': session['role'],
-                'approved': session['approved']
-            }
-            return user, None, None
-        # Fallback to DB if session missing fields
-    # If we reach here, need to verify with database
-    user = db.get_user_by_id(session['user_id'])
-    if not user:
-        session.clear()
-        return None, jsonify({'error': 'User no longer exists'}), 401
-    if not user.get('approved', False):
-        session.clear()
-        return None, jsonify({'error': 'Account not approved'}), 403
-    # Update session with verification timestamp and cache user fields
-    session['last_verified'] = now
-    session['role'] = user['role']
-    session['approved'] = user.get('approved', False)
-    return user, None, None
-
-# ----------------------------------------------------------------------
 # Authentication decorators
 # ----------------------------------------------------------------------
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        user, err_resp, status = verify_user_session()
-        if err_resp:
-            return err_resp, status
-        # Store user in flask.g for use in views (optional)
-        from flask import g
-        g.user = user
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
         return f(*args, **kwargs)
     return decorated_function
 
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        user, err_resp, status = verify_user_session()
-        if err_resp:
-            return err_resp, status
-        if user.get('role') != 'admin':
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        user = db.get_user_by_id(session['user_id'])
+        if not user or user.get('role') != 'admin':
             return jsonify({'error': 'Admin privileges required'}), 403
-        from flask import g
-        g.user = user
         return f(*args, **kwargs)
     return decorated_function
 
@@ -139,11 +89,8 @@ def check_batch_ownership(batch_id):
     job = db.get_batch_job(batch_id)
     if not job:
         return None, jsonify({'error': 'Batch not found'}), 404
-    # user is already verified and available in session (but we need role)
-    # Since verify_user_session already ensured user exists and approved, we can get user from session
-    user_role = session.get('role')
-    user_id = session.get('user_id')
-    if user_role != 'admin' and job.get('user_id') != user_id:
+    user = db.get_user_by_id(session['user_id'])
+    if user['role'] != 'admin' and job.get('user_id') != session['user_id']:
         return None, jsonify({'error': 'Access denied'}), 403
     return job, None, None
 
@@ -183,14 +130,12 @@ def login():
     if not db.verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid credentials'}), 401
     
+    # Check if account is approved
     if not user.get('approved', False):
         return jsonify({'error': 'Account not approved. Please wait for admin approval.'}), 403
     
-    session.clear()  # ensure clean session
     session['user_id'] = user['id']
     session['role'] = user['role']
-    session['approved'] = user.get('approved', False)
-    session['last_verified'] = time.time()
     return jsonify({
         'success': True,
         'user': {
@@ -210,10 +155,10 @@ def logout():
 def me():
     if 'user_id' not in session:
         return jsonify({'error': 'Not logged in'}), 401
-    # Use verification (may refresh if needed)
-    user, err_resp, status = verify_user_session()
-    if err_resp:
-        return err_resp, status
+    user = db.get_user_by_id(session['user_id'])
+    if not user:
+        session.clear()
+        return jsonify({'error': 'User not found'}), 401
     return jsonify({
         'id': user['id'],
         'username': user['username'],
@@ -235,9 +180,6 @@ def change_password():
         return jsonify({'error': 'New password must be at least 6 characters'}), 400
     
     user = db.get_user_by_id(session['user_id'])
-    if not user:
-        session.clear()
-        return jsonify({'error': 'User not found'}), 401
     if not db.verify_password(current_password, user['password_hash']):
         return jsonify({'error': 'Current password is incorrect'}), 401
     
