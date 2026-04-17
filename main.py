@@ -81,14 +81,18 @@ def deduplicate_recipients(recipients):
     return unique
 
 def check_batch_ownership(batch_id):
-    """Returns (job, error_response) or (None, response) if forbidden."""
+    """
+    Returns (job, error_response, status_code)
+    - On success: (job, None, None)
+    - On error: (None, error_response, status_code)
+    """
     job = db.get_batch_job(batch_id)
     if not job:
         return None, jsonify({'error': 'Batch not found'}), 404
     user = db.get_user_by_id(session['user_id'])
     if user['role'] != 'admin' and job.get('user_id') != session['user_id']:
         return None, jsonify({'error': 'Access denied'}), 403
-    return job, None
+    return job, None, None
 
 # ----------------------------------------------------------------------
 # Authentication endpoints
