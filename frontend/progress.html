@@ -177,25 +177,28 @@
 <body>
 <div class="container">
     <a href="index.html" class="back-link">← Back to modes</a>
-    <h1>📊 Batch Progress & Live Stats</h1>
-    <p class="sub">Real‑time sending progress + Postmark engagement metrics</p>
+    <h1>📊 Batch Progress & Stats</h1>
+    <p class="sub">Real‑time sending progress + engagement metrics (admin only)</p>
 
-    <div class="section-title">
-        <span>📈 Email Performance (last 30 days)</span>
-        <button id="refreshStatsBtn" class="refresh-btn">⟳ Refresh Stats</button>
-    </div>
-    <div class="stats-grid" id="overallStats">
-        <div class="stat-card"><div class="stat-label">Sent</div><div class="stat-value stat-sent" id="statSent">-</div></div>
-        <div class="stat-card"><div class="stat-label">Bounces</div><div class="stat-value stat-bounce" id="statBounces">-</div></div>
-        <div class="stat-card"><div class="stat-label">Spam Complaints</div><div class="stat-value stat-spam" id="statSpam">-</div></div>
-        <div class="stat-card"><div class="stat-label">Opens</div><div class="stat-value stat-open" id="statOpens">-</div></div>
+    <!-- Admin-only stats section -->
+    <div id="adminStatsSection" style="display: none;">
+        <div class="section-title">
+            <span>📈 Email Performance (last 30 days)</span>
+            <button id="refreshStatsBtn" class="refresh-btn">⟳ Refresh Stats</button>
+        </div>
+        <div class="stats-grid" id="overallStats">
+            <div class="stat-card"><div class="stat-label">Sent</div><div class="stat-value stat-sent" id="statSent">-</div></div>
+            <div class="stat-card"><div class="stat-label">Bounces</div><div class="stat-value stat-bounce" id="statBounces">-</div></div>
+            <div class="stat-card"><div class="stat-label">Spam Complaints</div><div class="stat-value stat-spam" id="statSpam">-</div></div>
+            <div class="stat-card"><div class="stat-label">Opens</div><div class="stat-value stat-open" id="statOpens">-</div></div>
+        </div>
     </div>
 
     <div class="section-title">
         <span>⏳ Active & Recent Batches</span>
         <div>
             <button id="refreshBatchesBtn" class="refresh-btn">⟳ Refresh</button>
-            <button id="manageBatchesBtn" class="manage-btn">📋 Manage Batches</button>
+            <button id="manageBatchesBtn" class="manage-btn" style="display: none;">📋 Manage Batches</button>
         </div>
     </div>
     <div id="batchesContainer"><div class="empty-state">Loading batches...</div></div>
@@ -210,7 +213,7 @@
     </div>
 </div>
 
-<!-- Modal for batch management -->
+<!-- Modal for batch management (admin only) -->
 <div id="manageModal" class="modal">
     <div class="modal-content">
         <button class="close-manage-modal" style="float:right; background:none; border:none; color:#f1f5f9; font-size:1.5rem; cursor:pointer;">&times;</button>
@@ -228,7 +231,43 @@
 </div>
 
 <script>
+    // ------------------------------------------------------------------
+    // 1. Fetch current user role and adjust UI accordingly
+    // ------------------------------------------------------------------
+    let currentUserRole = null;
+
+    async function fetchUserRole() {
+        try {
+            const res = await fetch('/api/auth/me');
+            if (res.ok) {
+                const user = await res.json();
+                currentUserRole = user.role;
+                // Show stats & manage button only for admin
+                if (currentUserRole === 'admin') {
+                    document.getElementById('adminStatsSection').style.display = 'block';
+                    document.getElementById('manageBatchesBtn').style.display = 'inline-block';
+                    loadOverallStats();      // only load stats if admin
+                } else {
+                    document.getElementById('adminStatsSection').style.display = 'none';
+                    document.getElementById('manageBatchesBtn').style.display = 'none';
+                }
+            } else {
+                // Not logged in – redirect to login (though backend already protects)
+                window.location.href = '/login.html';
+            }
+        } catch (err) {
+            console.error('Failed to fetch user info:', err);
+            // Fallback: assume non-admin and hide stats
+            document.getElementById('adminStatsSection').style.display = 'none';
+            document.getElementById('manageBatchesBtn').style.display = 'none';
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 2. Load overall Postmark stats (admin only)
+    // ------------------------------------------------------------------
     async function loadOverallStats() {
+        if (currentUserRole !== 'admin') return;
         try {
             const res = await fetch('/api/postmark/stats');
             const data = await res.json();
@@ -237,11 +276,15 @@
                 document.getElementById('statBounces').innerText = data.bounces.toLocaleString();
                 document.getElementById('statSpam').innerText = data.spam_complaints.toLocaleString();
                 document.getElementById('statOpens').innerText = data.opens.toLocaleString();
-                document.getElementById('statClicks').innerText = data.clicks.toLocaleString();
+                // Clicks not in the grid? Added for consistency but not displayed – we can add a fifth card if needed
+                // document.getElementById('statClicks').innerText = data.clicks.toLocaleString();
             }
         } catch(err) { console.error(err); }
     }
 
+    // ------------------------------------------------------------------
+    // 3. Load batches (already filtered by backend for non‑admin)
+    // ------------------------------------------------------------------
     async function loadBatches() {
         try {
             const listRes = await fetch('/api/batch/list');
@@ -331,7 +374,9 @@
         }
     }
 
-    // Batch management functions
+    // ------------------------------------------------------------------
+    // Batch management (admin only – functions remain, but button is hidden for users)
+    // ------------------------------------------------------------------
     async function loadManageModal() {
         const container = document.getElementById('batchListContainer');
         container.innerHTML = '<div style="text-align:center; padding:1rem;">Loading batches...</div>';
@@ -422,7 +467,9 @@
         });
     }
 
+    // ------------------------------------------------------------------
     // Event listeners
+    // ------------------------------------------------------------------
     document.querySelector('.close-modal').addEventListener('click', () => {
         document.getElementById('modal').style.display = 'none';
     });
@@ -435,28 +482,37 @@
         }
     });
 
-    document.getElementById('refreshStatsBtn').addEventListener('click', loadOverallStats);
+    document.getElementById('refreshStatsBtn')?.addEventListener('click', loadOverallStats);
     document.getElementById('refreshBatchesBtn').addEventListener('click', loadBatches);
-    document.getElementById('manageBatchesBtn').addEventListener('click', async () => {
+    document.getElementById('manageBatchesBtn')?.addEventListener('click', async () => {
         await loadManageModal();
         document.getElementById('manageModal').style.display = 'flex';
     });
-    document.querySelector('.close-manage-modal').addEventListener('click', () => {
+    document.querySelector('.close-manage-modal')?.addEventListener('click', () => {
         document.getElementById('manageModal').style.display = 'none';
     });
-    // Delegate buttons (they exist inside modal, but modal content is dynamic – attach after modal opens)
-    // We'll use event listeners on the buttons after they are created. Better to use event delegation:
-    document.getElementById('manageModal').addEventListener('click', (e) => {
+    // Delegate buttons inside manage modal
+    document.getElementById('manageModal')?.addEventListener('click', (e) => {
         if (e.target.id === 'selectAllBtn') selectAllBatches();
         if (e.target.id === 'clearAllBtn') clearAllBatches();
         if (e.target.id === 'deleteSelectedBtn') deleteSelectedBatches();
         if (e.target.id === 'deleteAllBtn') deleteAllBatches();
     });
 
-    loadOverallStats();
-    loadBatches();
-    setInterval(loadOverallStats, 10000);
-    setInterval(loadBatches, 5000);
+    // Initialize: fetch user role first, then load batches (and stats if admin)
+    fetchUserRole().then(() => {
+        loadBatches();
+        if (currentUserRole === 'admin') {
+            loadOverallStats();
+            // Auto-refresh for admin (stats & batches)
+            setInterval(loadOverallStats, 10000);
+        }
+        setInterval(loadBatches, 5000);
+    }).catch(err => {
+        console.error(err);
+        loadBatches(); // still try to load batches
+        setInterval(loadBatches, 5000);
+    });
 </script>
 </body>
 </html>
